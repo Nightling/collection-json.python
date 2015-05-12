@@ -37,6 +37,7 @@ class CollectionTestCase(TestCase):
         self.assertEqual(collection.href, 'http://example.org')
         self.assertEqual(collection.links, Array(Link, 'links', []))
         self.assertEqual(collection.items, Array(Item, 'items', []))
+        self.assertEqual(collection.inline, Array(Collection, 'inline', []))
         self.assertEqual(collection.queries, Array(Query, 'queries', []))
         self.assertEqual(collection.template, None)
         self.assertEqual(collection.error, None)
@@ -114,6 +115,49 @@ class CollectionTestCase(TestCase):
         link = Link('href', 'rel')
         self.assertEqual(collection.links, Array(Link, 'links', [link]))
 
+    def test_from_json_with_inline_data(self):
+        data = json.dumps({
+            'collection': {
+                'version': '1.0',
+                'href': 'http://example.com',
+                'links': [
+                    {
+                        'href': 'href-inline',
+                        'rel': 'rel-inline',
+                        'length': 1,
+                        'inline': True,
+                    }
+                ],
+                'inline': {
+                    'href-inline': {
+                        'collection': {
+                            'version': '1.0',
+                            'href': 'href-inline',
+                            'items': [
+                                {
+                                    'href': 'href',
+                                    'data': [
+                                        {'name': 'name'}
+                                    ],
+                                    'links': [
+                                        {'href': 'href', 'rel': 'rel'}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        })
+        collection = Collection.from_json(data)
+        data = Data('name')
+        link = Link('href', 'rel')
+        item = Item('href', [data], [link])
+        inline = [Collection(href='href-inline', items=[item])]
+        link = Link('href-inline', 'rel-inline', length=1, inline=True)
+        self.assertEqual(collection.inline, Array(Collection, 'inline', inline))
+        self.assertEqual(collection.links, Array(Link, 'links', [link]))
+
     def test_from_json_with_queries_data(self):
         data = json.dumps({
             'collection': {
@@ -143,6 +187,7 @@ class CollectionTestCase(TestCase):
         self.assertEqual(collection.template, None)
         self.assertEqual(collection.items, Array(Item, 'items', []))
         self.assertEqual(collection.links, Array(Link, 'links', []))
+        self.assertEqual(collection.inline, Array(Collection, 'inline', []))
         self.assertEqual(collection.queries, Array(Query, 'queries', []))
 
     def test_to_dict_minimal(self):
@@ -239,16 +284,42 @@ class CollectionTestCase(TestCase):
         link = Link('href', 'rel', 'name', 'render', 'prompt')
         data = Data('name', 'value', 'prompt')
         item = Item('href', [data], [link])
+        inline = Collection(href='http://example.com/inline', items=[item])
+        link_inline = Link('http://example.com/inline', 'rel-inline', 'name',
+                           'render', 'prompt', 1, True)
         query = Query('href', 'rel', 'name', 'prompt', [data])
         template = Template([data])
         error = Error('code', 'message', 'title')
         collection = Collection(
             href='http://example.com',
-            links=[link],
+            links=[link, link_inline],
             items=[item],
+            inline=[inline],
             queries=[query],
             template=template,
             error=error)
+
+        expected_items = [
+            {
+                'href': 'href',
+                'data': [
+                    {
+                        'name': 'name',
+                        'value': 'value',
+                        'prompt': 'prompt',
+                    }
+                ],
+                'links': [
+                    {
+                        'rel': 'rel',
+                        'href': 'href',
+                        'name': 'name',
+                        'render': 'render',
+                        'prompt': 'prompt',
+                    }
+                ]
+            }
+        ]
         expected = {
             'collection': {
                 'version': '1.0',
@@ -260,29 +331,27 @@ class CollectionTestCase(TestCase):
                         'name': 'name',
                         'render': 'render',
                         'prompt': 'prompt',
-                    }
-                ],
-                'items': [
+                    },
                     {
-                        'href': 'href',
-                        'data': [
-                            {
-                                'name': 'name',
-                                'value': 'value',
-                                'prompt': 'prompt',
-                            }
-                        ],
-                        'links': [
-                            {
-                                'rel': 'rel',
-                                'href': 'href',
-                                'name': 'name',
-                                'render': 'render',
-                                'prompt': 'prompt',
-                            }
-                        ]
+                        'rel': 'rel-inline',
+                        'href': 'http://example.com/inline',
+                        'name': 'name',
+                        'render': 'render',
+                        'prompt': 'prompt',
+                        'length': 1,
+                        'inline': True,
                     }
                 ],
+                'items': expected_items,
+                'inline': {
+                    'http://example.com/inline': {
+                        'collection': {
+                            'version': '1.0',
+                            'href': 'http://example.com/inline',
+                            'items': expected_items,
+                        }
+                    }
+                },
                 'queries': [
                     {
                         'rel': 'rel',

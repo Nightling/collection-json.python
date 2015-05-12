@@ -118,12 +118,15 @@ class Link(ComparableObject):
 
     """Object representing a Collection+JSON link object."""
 
-    def __init__(self, href, rel, name=None, render=None, prompt=None):
+    def __init__(self, href, rel, name=None, render=None, prompt=None,
+                 length=None, inline=None):
         self.href = href
         self.rel = rel
         self.name = name
         self.render = render
         self.prompt = prompt
+        self.length = length
+        self.inline = inline
 
     def __repr__(self):
         data = "rel='%s'" % self.rel
@@ -133,6 +136,10 @@ class Link(ComparableObject):
             data += " render='%s'" % self.render
         if self.prompt:
             data += " prompt='%s'" % self.prompt
+        if self.length:
+            data += " length='%s'" % self.length
+        if self.inline:
+            data += " inline='%s'" % self.inline
         return "<Link: %s>" % data
 
     def to_dict(self):
@@ -147,6 +154,10 @@ class Link(ComparableObject):
             output['render'] = self.render
         if self.prompt is not None:
             output['prompt'] = self.prompt
+        if self.length is not None:
+            output['length'] = self.length
+        if self.inline is not None:
+            output['inline'] = self.inline
         return output
 
 
@@ -315,9 +326,18 @@ class Array(ComparableObject, list):
 
     def to_dict(self):
         """Return a dictionary representing an Array object."""
-        return {
-            self.collection_name: [item.to_dict() for item in self]
-        }
+        if self.item_class is Collection:
+            return {
+                self.collection_name: {
+                    item.href: item.to_dict() for item in self
+                }
+            }
+        else:
+            return {
+                self.collection_name: [
+                    item.to_dict() for item in self
+                ]
+            }
 
 
 class Item(ComparableObject):
@@ -395,12 +415,6 @@ class Collection(ComparableObject):
 
     """Object representing a Collection+JSON document."""
 
-    error = TypedProperty(Error, "error")
-    template = TypedProperty(Template, "template")
-    items = ArrayProperty(Item, "items")
-    links = ArrayProperty(Link, "links")
-    queries = ArrayProperty(Query, "queries")
-
     @staticmethod
     def from_json(data):
         """Return a Collection instance.
@@ -415,13 +429,25 @@ class Collection(ComparableObject):
             kwargs = data.get('collection')
             if not kwargs:
                 raise ValueError
+            if 'inline' in kwargs and kwargs['inline']:
+                kwargs['inline'] = [Collection(**data.get('collection'))
+                                    for data in kwargs['inline'].values()]
         except ValueError:
             raise ValueError('Not a valid Collection+JSON document.')
 
         collection = Collection(**kwargs)
         return collection
 
-    def __init__(self, href, links=None, items=None, queries=None,
+    def __new__(cls, *args, **kwargs):
+        cls.error = TypedProperty(Error, 'error')
+        cls.template = TypedProperty(Template, 'template')
+        cls.items = ArrayProperty(Item, 'items')
+        cls.links = ArrayProperty(Link, 'links')
+        cls.inline = ArrayProperty(Collection, 'inline')
+        cls.queries = ArrayProperty(Query, 'queries')
+        return super(Collection, cls).__new__(cls)
+
+    def __init__(self, href, links=None, items=None, inline=None, queries=None,
                  template=None, error=None, version='1.0'):
         self.version = version
         self.href = href
@@ -430,6 +456,7 @@ class Collection(ComparableObject):
         self.template = template
         self.items = items
         self.links = links
+        self.inline = inline
         self.queries = queries
 
     def __repr__(self):
@@ -451,6 +478,8 @@ class Collection(ComparableObject):
             output['collection'].update(self.links.to_dict())
         if self.items:
             output['collection'].update(self.items.to_dict())
+        if self.inline:
+            output['collection'].update(self.inline.to_dict())
         if self.queries:
             output['collection'].update(self.queries.to_dict())
         if self.template:
