@@ -128,10 +128,18 @@ class Data(ComparableObject):
 
     """Object representing a Collection+JSON data object."""
 
-    def __init__(self, name, value=None, prompt=None):
+    def __init__(self, name, value=None, prompt=None, array=None, object=None):
         self.name = name
         self.value = value
+        self.array = array
+        self.object = object
         self.prompt = prompt
+        property_count = 0
+        if value is not None: property_count = property_count+1
+        if array is not None: property_count = property_count+1
+        if object is not None: property_count = property_count+1
+        if property_count > 1:
+            raise ValueError('Data can only have one of the three properties.')
 
     def __repr__(self):
         data = "name='%s'" % self.name
@@ -146,6 +154,10 @@ class Data(ComparableObject):
         }
         if self.value is not None:
             output['value'] = self.value
+        elif self.array is not None:
+            output['array'] = self.array
+        elif self.object is not None:
+            output['object'] = self.object
         if self.prompt is not None:
             output['prompt'] = self.prompt
         return output
@@ -515,7 +527,7 @@ class Collection(ComparableObject):
         if self.links:
             output['collection'].update(self.links.to_dict())
         if self.items:
-            output['collection'].update( self.items.to_dict())
+            output['collection'].update(self.items.to_dict())
         if self.inline:
             output['collection'].update(self.inline.to_dict())
         if self.queries:
