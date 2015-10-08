@@ -33,6 +33,43 @@ class ArrayProperty(object):
         instance.__dict__[self.name] = Array(self.cls, self.name, value)
 
 
+class DictProperty(object):
+
+    """A descriptor that converts to a dictionary containing Arrays or objects of a given type"""
+
+    def __init__(self, cls, name):
+        """Constructs the dictionary
+
+        :param cls type: the expected type of the objects
+        """
+        self.cls = cls
+        self.name = name
+
+    def __get__(self, instance, owner):
+        target = instance
+        if target is None:
+            target = owner
+        if self.name in target.__dict__:
+            return target.__dict__[self.name]
+        raise AttributeError
+
+    def __set__(self, instance, vals):
+        instance.__dict__[self.name] = {}
+        if vals is not None:
+            for name, value in vals.items():
+                if value is None or isinstance(value, self.cls):
+                    instance.__dict__[self.name][name] = value
+                elif isinstance(value, dict):
+                    instance.__dict__[self.name][name] = self.cls(**value)
+                elif isinstance(value, list):
+                    self.cls = self.cls
+                    instance.__dict__[self.name][name] = Array(self.cls, None, value)
+                else:
+                    raise TypeError("Invalid value '%s', "
+                                    "expected dict, list or '%s'" % (value,
+                                                               self.cls.__name__))
+
+
 class TypedProperty(object):
 
     """A descriptor for assigning only a specific type of instance.
@@ -182,16 +219,13 @@ class Error(ComparableObject):
 
     def to_dict(self):
         """Return a dictionary representing the Error instance."""
-        output = {
-            'error': {
-            }
-        }
+        output = {}
         if self.code:
-            output['error']['code'] = self.code
+            output['code'] = self.code
         if self.message:
-            output['error']['message'] = self.message
+            output['message'] = self.message
         if self.title:
-            output['error']['title'] = self.title
+            output['title'] = self.title
         return output
 
 
@@ -326,18 +360,20 @@ class Array(ComparableObject, list):
 
     def to_dict(self):
         """Return a dictionary representing an Array object."""
+
         if self.item_class is Collection:
-            return {
-                self.collection_name: {
-                    item.href: item.to_dict() for item in self
-                }
+            data = {
+                item.href: item.to_dict() for item in self
             }
         else:
+            data = [
+                item.to_dict() for item in self
+            ]
+        if self.collection_name is not None:
             return {
-                self.collection_name: [
-                    item.to_dict() for item in self
-                ]
+                self.collection_name: data
             }
+        return data
 
 
 class Item(ComparableObject):
@@ -440,6 +476,7 @@ class Collection(ComparableObject):
 
     def __new__(cls, *args, **kwargs):
         cls.error = TypedProperty(Error, 'error')
+        cls.errors = DictProperty(Error, 'errors')
         cls.template = TypedProperty(Template, 'template')
         cls.items = ArrayProperty(Item, 'items')
         cls.links = ArrayProperty(Link, 'links')
@@ -448,11 +485,12 @@ class Collection(ComparableObject):
         return super(Collection, cls).__new__(cls)
 
     def __init__(self, href, links=None, items=None, inline=None, queries=None,
-                 template=None, error=None, version='1.0'):
+                 template=None, error=None, errors=None, version='1.0'):
         self.version = version
         self.href = href
 
         self.error = error
+        self.errors = errors
         self.template = template
         self.items = items
         self.links = links
@@ -477,7 +515,7 @@ class Collection(ComparableObject):
         if self.links:
             output['collection'].update(self.links.to_dict())
         if self.items:
-            output['collection'].update(self.items.to_dict())
+            output['collection'].update( self.items.to_dict())
         if self.inline:
             output['collection'].update(self.inline.to_dict())
         if self.queries:
@@ -486,4 +524,6 @@ class Collection(ComparableObject):
             output['collection'].update(self.template.to_dict())
         if self.error:
             output['collection'].update(self.error.to_dict())
+        if self.errors:
+            output['collection']['errors'] = {name : value.to_dict() for name, value in self.errors.items()}
         return output
